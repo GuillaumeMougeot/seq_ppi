@@ -1,1 +1,0 @@
-python model_test.py -m 'model_save.h5' --data 'yeast/preprocessed/protein.dictionary.tsv'

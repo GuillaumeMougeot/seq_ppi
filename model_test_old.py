@@ -4,12 +4,7 @@ from tensorflow import keras
 import numpy as np
 import pandas as pd
 import argparse
-from sklearn.metrics import (
-    roc_auc_score,
-    accuracy_score,
-    precision_score,
-    recall_score,
-)
+from sklearn.metrics import roc_auc_score
 import sys
 from seq2tensor import s2t
 from tqdm import tqdm
@@ -17,18 +12,12 @@ from tqdm import tqdm
 # Network parameters
 parser = argparse.ArgumentParser()
 parser.add_argument('-m', '--model', type=str, default=None, help='Filepath to a pretrained model.')
-parser.add_argument('--data', type=str, default='yeast', help='Name of the folder containing data dictionary.')
+parser.add_argument('--data', type=str, default='yeast', help='Name of the folder containing data.')
 parser.add_argument('--emb', type=int, default=3, help='Embedding type: 0=oneshot, 1=string_vec5,'
                                                        '2=CTCoding_onehot, 3=vec5_CTC.')
 
 args = parser.parse_args()
 id2seq_file = args.data
-
-def remove_space(line):
-    for i,l in enumerate(line):
-        if ' ' in l:
-            line[i] = line[i][:str.find(l, ' ')]
-    return line
 
 id2index = {}
 seqs = []
@@ -43,13 +32,12 @@ id2_aid = {}
 sid = 0
 
 seq_size = 2000
-emb_files = [os.path.expanduser('embeddings/default_onehot.txt'), os.path.expanduser('embeddings/string_vec5.txt'),
-             os.path.expanduser('embeddings/CTCoding_onehot.txt'), os.path.expanduser('embeddings/vec5_CTC.txt')]
+emb_files = [os.path.expanduser('~/PIPR/seq_ppi/embeddings/default_onehot.txt'), os.path.expanduser('~/PIPR/seq_ppi/embeddings/string_vec5.txt'),
+             os.path.expanduser('~/PIPR/seq_ppi/embeddings/CTCoding_onehot.txt'), os.path.expanduser('~/PIPR/seq_ppi/embeddings/vec5_CTC.txt')]
 hidden_dim = 25
 n_epochs = 50
 
-# ds_file = os.path.expanduser('yeast/preprocessed/protein.actions.tsv')
-ds_file = os.path.expanduser('../Models_and_Datasets/ath/protein.actions.tsv')
+ds_file = os.path.expanduser('~/PIPR/seq_ppi/yeast/preprocessed/protein.actions.tsv')
 label_index = 2
 sid1_index = 0
 sid2_index = 1
@@ -67,10 +55,6 @@ for line in tqdm(open(ds_file)):
         skip_head = False
         continue
     line = line.rstrip('\n').rstrip('\r').split('\t')
-    line = remove_space(line)
-    if len(line) != 3:
-        print("bug with the line:",line)
-        continue
     if id2index.get(line[sid1_index]) is None or id2index.get(line[sid2_index]) is None:
         continue
     if id2_aid.get(line[sid1_index]) is None:
@@ -88,7 +72,7 @@ for line in tqdm(open(ds_file)):
         count += 1
         if count >= max_data:
             break
-# print("raw",raw_data[0])
+print(len(raw_data))
 
 dim = seq2t.dim
 seq_tensor = np.array([seq2t.embed_normalized(line, seq_size) for line in tqdm(seq_array)])
@@ -96,51 +80,29 @@ seq_tensor = np.array([seq2t.embed_normalized(line, seq_size) for line in tqdm(s
 seq_index1 = np.array([line[sid1_index] for line in tqdm(raw_data)])
 seq_index2 = np.array([line[sid2_index] for line in tqdm(raw_data)])
 
+print(seq_index1[:10])
 
 class_map = {'0': 1, '1': 0}
+print(class_map)
 class_labels = np.zeros((len(raw_data), 2))
 for i in range(len(raw_data)):
     class_labels[i][class_map[raw_data[i][label_index]]] = 1.
 model = keras.models.load_model(args.model)
-# model.summary()
+
 labels = []
 pred = []
-
-labels_roc = []
-pred_roc = []
-
-print(len(class_labels))
 
 prev = 0
 for i in range(128, len(seq_index1)+127, 128):
     s1 = seq_tensor[seq_index1[prev:i]]
     s2 = seq_tensor[seq_index2[prev:i]]
-    p = model.predict([s1, s2])
-    l = class_labels[prev:i]
     if prev == 0:
-        pred_roc = p.copy().flatten()
-        labels_roc = l.copy().flatten()
-        pred = np.argmax(p,axis=-1).flatten()
-        labels = np.argmax(l,axis=-1).flatten()
+        pred = model.predict([s1, s2]).flatten()
+        labels = l[prev:i]
     else:
-        pred_roc = np.concatenate((pred_roc, p.copy().flatten()))
-        labels_roc = np.concatenate((labels_roc, l.copy().flatten()))
-        pred = np.concatenate((pred, np.argmax(p,axis=-1).flatten()))
-        labels = np.concatenate((labels, np.argmax(l,axis=-1).flatten()))
-        
+        pred = np.concatenate((pred, model.predict([s1, s2]).flatten()), dtype=np.float16)
+        labels = np.concatenate((labels, l[prev:i]))
     prev = i
 
-print(len(labels_roc))
-print(len(pred_roc))
-
-auc = roc_auc_score(labels_roc, pred_roc)
+auc = roc_auc_score(labels, pred)
 print("Test ROC AUC score: ", auc)
-
-acc = accuracy_score(labels, pred)
-print("Test accuracy score:", acc)
-
-pre = precision_score(labels, pred)
-print("Test precision score:", pre)
-
-rec = recall_score(labels, pred)
-print("Test recall score:", rec)
