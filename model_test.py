@@ -81,6 +81,7 @@ for line in tqdm(open(ds_file)):
     
     if id2index.get(line[sid1_index]) is None or id2index.get(line[sid2_index]) is None:
         continue
+    ids += [line.copy()] # for the csv file
     if id2_aid.get(line[sid1_index]) is None:
         id2_aid[line[sid1_index]] = sid
         sid += 1
@@ -92,12 +93,11 @@ for line in tqdm(open(ds_file)):
         seq_array.append(seqs[id2index[line[sid2_index]]])
     line[sid2_index] = id2_aid[line[sid2_index]]
     raw_data.append(line)
-    ids += [line.copy()] # for the csv file
+    
     if limit_data:
         count += 1
         if count >= max_data:
             break
-# print("raw",raw_data[0])
 
 dim = seq2t.dim
 seq_tensor = np.array([seq2t.embed_normalized(line, seq_size) for line in tqdm(seq_array)])
